@@ -1,0 +1,12 @@
+[package]
+name = "chiffonade"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# appcui = "0.4.12"
+# duct = "1.1.1"
+log = "0.4.33"
+# superlighttui = "0.22.2"
+tracing = "0.1.44"
+tracing-subscriber = {version = "0.3.23", features=["env-filter", "fmt"]}
