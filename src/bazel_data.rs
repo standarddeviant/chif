@@ -5,7 +5,10 @@ use std::{
 
 use tracing::debug;
 
-use crate::utils::{isdir, isfile, real_path, relative_path};
+use crate::{
+    git_data::GitFileList,
+    utils::{isdir, isfile, real_path, relative_path},
+};
 
 #[derive(Default, Debug)]
 pub struct BazelData {
@@ -109,6 +112,63 @@ pub fn fetch_bazel_data() -> BazelData {
         files_targets,
         workspace_dir,
     }
+}
+
+pub fn fetch_images_targets_from_git_list(
+    gitlist: &GitFileList,
+    targets_pat: Option<&str>,
+) -> HashMap<String, Vec<String>> {
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
+    let targets_pat = targets_pat.unwrap_or("");
+
+    for gitpath in &gitlist.file_list {
+        // let last_arg = format!("kind('.*', except(rdeps(//..., {gitpath}), {gitpath}))");
+
+        // let last_arg = format!("kind('.*', rdeps(//my/..., //my:target) except //my:target)");
+        // bazel query "rdeps(//my/..., //my:target) except //my:target"
+        let last_arg = format!("kind('.*{targets_pat}.*', rdeps(//..., {gitpath}))");
+        let tic = std::time::Instant::now();
+        debug!("running query for {gitpath}");
+        debug!("-->bazel cquery --keep_going {last_arg}<--");
+
+        // bazel query "except(rdeps(//..., //path/to:target), //path/to:target)"
+
+        // debug!("bazel query --keep_going
+        let targets_output = Command::new("bazel")
+            .arg("cquery")
+            .arg("--keep_going")
+            .arg(last_arg)
+            .output()
+            .expect("failed to query targets");
+        debug!(" => took {:?}", tic.elapsed());
+        let targets_stdout = String::from_utf8_lossy(&targets_output.stdout).into_owned();
+        debug!(" => targets_stdout = {targets_stdout}");
+        let mut targets_vec: Vec<String> = vec![];
+        for line in targets_stdout.lines() {
+            let trimmed_line = line.trim().to_string();
+            // debug!("re: {target} => evaluating file: {line}");
+            if trimmed_line.starts_with("//") {
+                if trimmed_line.contains("null") {
+                    continue;
+                }
+                for token in trimmed_line.split(" ") {
+                    debug!("for {gitpath}, found target => {token}");
+                    // if let Some(path_check) = extract_file_path_from_bazel_path(&token.to_string())
+                    // {
+                    //     debug!("path_check = {path_check}");
+                    //     if gitpath.eq(&path_check) {
+                    //         continue;
+                    //     }
+                    // }
+                    targets_vec.push(token.to_string());
+                    break;
+                }
+            }
+        }
+        out.insert(gitpath.clone(), targets_vec);
+    }
+
+    out
 }
 
 pub fn file_path_to_bazel_path(p: &String, bd: &BazelData) -> String {
